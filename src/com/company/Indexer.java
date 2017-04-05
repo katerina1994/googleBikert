@@ -15,8 +15,8 @@ public class Indexer {
     static DBCollection getKeyCollection() {
         if (keyCollection != null)
             return keyCollection;
-        Mongo mongo = null;  
-        try {
+        Mongo mongo = null;
+        try  {
             mongo = new Mongo();
         } catch (UnknownHostException e) {
             e.printStackTrace();
