@@ -1,16 +1,12 @@
 package com.company;
 
 import com.mongodb.*;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Created by Katerina on 09.04.2017.
- */
 class StringInDB {
     private static DBCollection keyCollection;
 

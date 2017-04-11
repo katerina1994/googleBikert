@@ -50,30 +50,19 @@ class Indexer {
         for (String word : words) {
             BasicDBObject query = new BasicDBObject();
 
-            query.put("word", word);
+            query.put("word", word); //  Key для поиска найденных слов в базе
             DBCursor cursor = getKeyCollection().find(query);
 
             String str;
             if (cursor.hasNext()) {
                 str = cursor.next().toString();
-                System.out.println(str);
-                wordPositions.put(word, parsePositions(str));
+               // System.out.println(str);
+                wordPositions.put(word, parsePositions(str));// добавляем в HashMap <String слово, <имя файла, List(Строка начало конец)>>
             }
             else {
                 wordPositions.put(word, null);
             }
         }
-//        for (Map.Entry<String, HashMap<String, Position>> wordPositionEntry : wordPositions.entrySet()) {
-//            System.out.println("Word: " + wordPositionEntry.getKey());
-//            if (wordPositionEntry.getValue() != null) {
-//                for (Map.Entry<String, Position> filePositionEntry : wordPositionEntry.getValue().entrySet()) {
-//                    System.out.println("File: " + filePositionEntry.getKey());
-//                    for (PositionInFile posInFile : filePositionEntry.getValue().positionsInFile) {
-//                        System.out.println("Line:\t" + posInFile.line + "\tStart:\t" + posInFile.start + "\tEnd:\t" + posInFile.end);
-//                    }
-//                }
-//            }
-//        }
 
         return wordPositions;
     }

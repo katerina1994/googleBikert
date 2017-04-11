@@ -8,8 +8,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-class Tokenizator {
+class Tokenizer {
 
+    //Разбиение файла по строкам а затем парсим по словам и отдаем в Indexer.indexKey(Слово имя файла строку начало и конец);
     static void processFile(String fileName, String filePath) {
         String line;
         int lineNum = 0;
@@ -43,6 +44,7 @@ class Tokenizator {
         }
     }
 
+    // парсим строку input по словам и отдаем ее в findWordsInSameFile в структуре ArrayList;
     static private ArrayList<String> parseLine(String input) {
         Pattern pattern = Pattern.compile("\\p{L}+", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(input);
@@ -64,10 +66,10 @@ class Tokenizator {
         return list;
     }
 
-    static void findWordsInSameLine(String input) {
+    static Map<String, Map<Integer, List<String>>> findWordsInSameLine(String input) {
         ArrayList<String> inputWords = parseLine(input);
         HashMap<String, HashMap<String, Position>> wordsMap = null;
-
+        Map<String, Map<Integer, List<String>>> result = new LinkedHashMap<>();
         try {
             wordsMap = Indexer.findWords(inputWords);
         } catch (Exception e) {
@@ -76,19 +78,19 @@ class Tokenizator {
         }
 
         if (wordsMap == null) {
-            return;
+            return result;
         }
 
         ArrayList<String> nonFoundWords = new ArrayList<>();
         ArrayList<String> foundWords = new ArrayList<>();
-        ArrayList<String> files = includedFile(wordsMap, nonFoundWords, foundWords);
-
+        ArrayList<String> files = includedFile(wordsMap, nonFoundWords, foundWords);//лист файлов со всеми найденными хотя бы где нибудь словами
 
         for (String file : files) {
+            result.put(file, new LinkedHashMap<>());
             System.out.println("File: " + file);
-            HashMap<String, List<Integer>> mappedLines = new HashMap<>();
+            HashMap<String, List<Integer>> mappedLines = new LinkedHashMap<>();// ключ: Слово, Значение: список уникальных строк где оно содержится
             for (String word : foundWords) {
-                List<Integer> lines = wordsMap
+                List<Integer> lines = wordsMap //создаем список строк данного слова в данном файле
                         .get(word)
                         .get(file)
                         .positionsInFile
@@ -96,123 +98,57 @@ class Tokenizator {
                         .map(filepos -> filepos.line)
                         .collect(Collectors.toList());
                 Set<Integer> hs = new LinkedHashSet<>();
-                hs.addAll(lines);
+                hs.addAll(lines); //оставляет только уникальные номера строк
                 lines.clear();
                 lines.addAll(hs);
                 mappedLines.put(word, lines);
             }
 
-            List<Integer> linesIntersection = new ArrayList<>(mappedLines.values()).get(0);
+            List<Integer> linesIntersection = new ArrayList<>(mappedLines.values()).get(0);//создаем лист от колекции списков уникальных строк и берем первый элемент
 
             for (List<Integer> lines : mappedLines.values()) {
-                linesIntersection.retainAll(lines);
-//                System.out.println(linesIntersection);
+                linesIntersection.retainAll(lines);// пересечение уникальных строк н-ого элемента
             }
-            System.out.println(linesIntersection);
+            System.out.println(linesIntersection); // номера строк где содежатся все слова
+
             for (Integer lineNum : linesIntersection) {
-                String line = StringInDB.getString(file, lineNum);
+                String line = StringInDB.getString(file, lineNum); //вытаскивает строку из базы
                 System.out.println(line);
-                processLine(line, foundWords);
+                result.get(file).put(lineNum, processLine(line, foundWords)); //сохраняем список цитат для текущего файла и текущей строки
             }
 
         }
-
+        return result;
 
     }
 
-    private static void processLine(String line, ArrayList<String> foundWords) {
-        List<SubString> parsedLine = parseLineWithPositions(line);
-
+    private static List<String> processLine(String line, ArrayList<String> foundWords) {
+        List<SubString> parsedLine = parseLineWithPositions(line);//список подстрок(слова с их позициями)
+        List<String> highlightedStrings = new ArrayList<>();
         int windowLeft = 3;
         int windowRight = 3;
-        List<SubString> subStrings = new ArrayList<>();
+
+        List<SubString> subStrings = new MergedSubStrings(line);// обьединенный список подстрок
         for (int i = 0; i < parsedLine.size(); i++) {
-            if (foundWords.contains(parsedLine.get(i).baseWord)) {
+            if (foundWords.contains(parsedLine.get(i).baseWord)) { //
                 int startIndex = Math.max(0, i - windowLeft);
                 int endIndex = Math.min(parsedLine.size() - 1, i + windowRight);
                 subStrings.add(new SubString(
                         line,
+                        parsedLine.get(i).start,
                         parsedLine.get(startIndex).start,
+                        parsedLine.get(i).end,
                         parsedLine.get(endIndex).end,
                         parsedLine.get(i).baseWord));
             }
         }
-        List<SubString> mergedSubStrings = mergeSubStrings(subStrings);
-        for (SubString s : mergedSubStrings) {
-            System.out.println(s);
-            s.expandToSentence();
-            System.out.println(s);
-            System.out.println(hightlightWords(s.toString(), foundWords));
-        }
+        System.out.println(subStrings);
+        highlightedStrings.add(highlightWords(subStrings.toString(), foundWords));
+        System.out.println("Highlighted: " + highlightWords(subStrings.toString(), foundWords));
+        return highlightedStrings;
     }
 
-    private static List<SubString> mergeSubStrings(List<SubString> subStrings) {
-        List<SubString> result = new ArrayList<>();
-        for (int i = 0, j = 0; i < subStrings.size(); i++) {
-            if (result.size() <= j) {
-                result.add(new SubString(subStrings.get(i)));
-                continue;
-            }
-            //2 - magic constant, probably this should be 3 or even 4
-            if (result.get(j).end >= subStrings.get(i).start + 3) {
-                result.get(j).end = subStrings.get(i).end;
-                continue;
-            }
-            j++;
-        }
-        return result;
-    }
-
-    private static class SubString {
-        int start;
-        int end;
-        String fullString;
-        String baseWord;
-
-        SubString(String _fullString, int _start, int _end, String baseWord) {
-            fullString = _fullString;
-            start = Math.max(0, _start);
-            end = Math.min(_end, fullString.length() - 1);
-            this.baseWord = baseWord;
-        }
-
-        SubString(SubString other) {
-            this.start = other.start;
-            this.end = other.end;
-            fullString = other.fullString;
-            baseWord = other.baseWord;
-        }
-
-        @Override
-        public String toString() {
-            return (start == 0 ? "" : "... ")
-                    + fullString.substring(start, end)
-                    + (end == fullString.length() - 1 ? "" : " ...");
-        }
-
-        void expandToSentence() {
-            Pattern pattern = Pattern.compile("[?.!\\u2026]|^\\s*(?=\\p{Lu})", Pattern.MULTILINE);
-            Matcher matcher = pattern.matcher(fullString);
-
-            int tempStart = start;
-            int tempEnd = fullString.length() - 1;
-            while (matcher.find()) {
-                if (matcher.end() < start) {
-                    tempStart = matcher.end();
-                }
-                if (matcher.end() > end && tempEnd > matcher.end()) {
-                    tempEnd = matcher.end();
-                }
-            }
-            start = tempStart;
-            end = tempEnd;
-
-        }
-
-
-    }
-
-    static String hightlightWords( String s, List<String> words) {
+    private static String highlightWords(String s, List<String> words) {
         Pattern pattern = Pattern.compile("\\p{L}+", Pattern.MULTILINE | Pattern.CASE_INSENSITIVE);
         Matcher matcher = pattern.matcher(s);
 
@@ -222,8 +158,7 @@ class Tokenizator {
             if (words.contains(matcher.group().toLowerCase())) {
                 String rep = "<b>" + matcher.group() + "</b>";
                 matcher.appendReplacement(output, rep);
-            }
-            else {
+            } else {
                 matcher.appendReplacement(output, matcher.group());
             }
         }
@@ -233,7 +168,7 @@ class Tokenizator {
 
     static void findWordsInSameFile(String input) {
         ArrayList<String> inputWords = parseLine(input);
-        HashMap<String, HashMap<String, Position>> wordsMap = null;
+        HashMap<String, HashMap<String, Position>> wordsMap = null; //Вытащенные из базы искомые слова и их позиции
 
         try {
             wordsMap = Indexer.findWords(inputWords);
@@ -248,7 +183,7 @@ class Tokenizator {
 
         ArrayList<String> nonFoundWords = new ArrayList<>();
         ArrayList<String> foundWords = new ArrayList<>();
-        ArrayList<String> files = includedFile(wordsMap, nonFoundWords, foundWords);
+        ArrayList<String> files = includedFile(wordsMap, nonFoundWords, foundWords);//лист файлов со всеми найденными хотя бы где нибудь словами
 
         System.out.println("Non found words: " + nonFoundWords);
         System.out.println("Found words: " + foundWords);
@@ -262,8 +197,6 @@ class Tokenizator {
                 }
             }
         }
-        findWordsInSameLine(input);
-
     }
 
     private static ArrayList<String> includedFile(HashMap<String, HashMap<String, Position>> wordsMap,
@@ -272,22 +205,22 @@ class Tokenizator {
         nonFoundWords.clear();
         foundWords.clear();
 
-        for (Map.Entry<String, HashMap<String, Position>> wordEntry : wordsMap.entrySet()) {
-            if (wordEntry.getValue() != null) {
-                foundWords.add(wordEntry.getKey());
+        for (Map.Entry<String, HashMap<String, Position>> wordEntry : wordsMap.entrySet()) { //entrySet() - Получает набор элементов
+            if (wordEntry.getValue() != null) { // Если есть значение ()
+                foundWords.add(wordEntry.getKey()); // Добавляем слово в список найденных слов
             } else {
-                nonFoundWords.add(wordEntry.getKey());
+                nonFoundWords.add(wordEntry.getKey());// Добавляем слово в список не найденных слов
             }
         }
 
         if (foundWords.size() == 0) {
-            return new ArrayList<>();
+            return new ArrayList<>(); // вернет пустой лист если слова не нашлись
         }
-
-        ArrayList<String> filesIntersection = new ArrayList<>(wordsMap.get(foundWords.get(0)).keySet());
+        // Ищем файлы содержащие все найденные слова
+        ArrayList<String> filesIntersection = new ArrayList<>(wordsMap.get(foundWords.get(0)).keySet());//Вытащит все файлы для первого слова
         for (String word : foundWords) {
-            filesIntersection.retainAll(wordsMap.get(word).keySet());
-            System.out.println(filesIntersection);
+            filesIntersection.retainAll(wordsMap.get(word).keySet());// ищет пересечение файлов для слов
+           // System.out.println(filesIntersection);
         }
         return filesIntersection;
     }
